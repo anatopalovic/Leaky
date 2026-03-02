@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message_model.dart';
 import '../models/settings_model.dart';
 import '../models/user_model.dart';
-import '../services/insight_service.dart';
+import '../services/ai_parser_service.dart';
 import '../services/financial_rules_service.dart';
+import '../services/insight_service.dart';
 import '../services/mock_auth_service.dart';
-import '../services/mock_parser_service.dart';
 import '../services/mock_salary_service.dart';
 import '../services/mock_subscription_service.dart';
 import '../services/mock_transaction_service.dart';
@@ -18,8 +18,8 @@ final mockAuthServiceProvider = Provider<MockAuthService>((ref) => MockAuthServi
 final mockTransactionServiceProvider =
     Provider<MockTransactionService>((ref) => MockTransactionService());
 
-/// Replace with AI parser when integrating AI.
-final mockParserServiceProvider = Provider<MockParserService>((ref) => MockParserService());
+/// AI-backed parser (OpenAI) with local regex fallback.
+final mockParserServiceProvider = Provider<AIParserService>((ref) => AIParserService());
 
 final insightServiceProvider = Provider<InsightService>((ref) {
   return InsightService(ref.watch(mockTransactionServiceProvider));

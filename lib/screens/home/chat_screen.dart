@@ -33,6 +33,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _sendMessage() {
+    _handleSend();
+  }
+
+  Future<void> _handleSend() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
@@ -95,7 +99,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     // 3) Transaction parse (expense)
     final parser = ref.read(mockParserServiceProvider);
-    final parsed = parser.parse(text);
+    final parsed = await parser.parse(text);
 
     if (parsed == null) {
       replyText =

@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'providers/app_providers.dart';
 import 'screens/home/chat_screen.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Load .env for OPENAI_API_KEY. In production, replace with secure key management.
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // Safe fallback if .env is missing.
+  }
+
   runApp(
     const ProviderScope(
       child: LeakyApp(),
