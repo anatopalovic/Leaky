@@ -5,49 +5,79 @@ import '../models/conversation_state.dart';
 import '../models/salary_config_model.dart';
 import '../models/transaction_model.dart';
 import '../providers/app_providers.dart';
+import '../services/financial_rules_service.dart';
+import '../services/mock_parser_service.dart';
 import '../services/mock_salary_service.dart';
 
 enum ChatFlowStep {
   idle,
   awaitingAmount,
   awaitingDescription,
+  awaitingCategorySelection,
   awaitingAllocationCategory,
   awaitingAllocationPercent,
   postSaveConfirmation,
+  // Income allocation
+  awaitingAllocationChoice,
+  awaitingManualSpending,
+  awaitingManualSavings,
+  awaitingManualInvestments,
 }
 
 class ChatControllerState {
   final ConversationState conversationState;
   final ChatFlowStep flowStep;
   final double? pendingAmount;
+  final String? pendingDescription;
   final TransactionType? currentTransactionType;
   final String? selectedAllocationGroup;
+  final double? pendingIncomeAmount;
+  final double? allocationSpending;
+  final double? allocationSavings;
+  final double? allocationInvestments;
 
   const ChatControllerState({
     this.conversationState = ConversationState.home,
     this.flowStep = ChatFlowStep.idle,
     this.pendingAmount,
+    this.pendingDescription,
     this.currentTransactionType,
     this.selectedAllocationGroup,
+    this.pendingIncomeAmount,
+    this.allocationSpending,
+    this.allocationSavings,
+    this.allocationInvestments,
   });
 
   ChatControllerState copyWith({
     ConversationState? conversationState,
     ChatFlowStep? flowStep,
     double? pendingAmount,
+    String? pendingDescription,
     TransactionType? currentTransactionType,
     String? selectedAllocationGroup,
+    double? pendingIncomeAmount,
+    double? allocationSpending,
+    double? allocationSavings,
+    double? allocationInvestments,
     bool clearPendingAmount = false,
+    bool clearPendingDescription = false,
     bool clearSelectedAllocationGroup = false,
+    bool clearAllocationAmounts = false,
   }) {
     return ChatControllerState(
       conversationState: conversationState ?? this.conversationState,
       flowStep: flowStep ?? this.flowStep,
       pendingAmount: clearPendingAmount ? null : (pendingAmount ?? this.pendingAmount),
+      pendingDescription: clearPendingDescription ? null : (pendingDescription ?? this.pendingDescription),
       currentTransactionType: currentTransactionType ?? this.currentTransactionType,
       selectedAllocationGroup: clearSelectedAllocationGroup
           ? null
           : (selectedAllocationGroup ?? this.selectedAllocationGroup),
+      pendingIncomeAmount: pendingIncomeAmount ?? this.pendingIncomeAmount,
+      allocationSpending: clearAllocationAmounts ? null : (allocationSpending ?? this.allocationSpending),
+      allocationSavings: clearAllocationAmounts ? null : (allocationSavings ?? this.allocationSavings),
+      allocationInvestments: clearAllocationAmounts ? null : (allocationInvestments ?? this.allocationInvestments),
     );
   }
 }
@@ -148,15 +178,115 @@ class ChatController extends StateNotifier<ChatControllerState> {
     }
   }
 
-  Future<void> _handleHomeText(String text) async {
-    // In home state, never send random text to AI.
+  void handleIncomeAllocationChoice({required String choice}) {
+    if (state.conversationState != ConversationState.incomeMode ||
+        state.flowStep != ChatFlowStep.awaitingAllocationChoice) return;
+    final income = state.pendingIncomeAmount ?? 0;
+    final currency = _ref.read(effectiveCurrencyProvider);
+
+    if (choice == 'skip') {
+      _addAssistantMessage('Skipped. Income recorded.');
+      state = state.copyWith(
+        flowStep: ChatFlowStep.postSaveConfirmation,
+        pendingIncomeAmount: null,
+        clearAllocationAmounts: true,
+      );
+      _addAssistantMessage('Would you like to add another income?');
+      return;
+    }
+
+    if (choice == 'recommended') {
+      final rulesService = _ref.read(financialRulesServiceProvider);
+      final allocation = FinancialRulesService.defaultAllocation;
+      final targets = rulesService.calculateTargets(income, allocation);
+      _addAssistantMessage(
+        'Using 50/30/20: Needs ${targets.targetNeeds.toStringAsFixed(0)}, '
+        'Wants ${targets.targetWants.toStringAsFixed(0)}, '
+        'Savings ${targets.targetSavings.toStringAsFixed(0)} $currency.',
+      );
+      state = state.copyWith(
+        flowStep: ChatFlowStep.postSaveConfirmation,
+        pendingIncomeAmount: null,
+        clearAllocationAmounts: true,
+      );
+      _addAssistantMessage('Would you like to add another income?');
+      return;
+    }
+
+    if (choice == 'manual') {
+      state = state.copyWith(
+        flowStep: ChatFlowStep.awaitingManualSpending,
+        clearAllocationAmounts: true,
+      );
+      _addAssistantMessage('How much for spending?');
+    }
+  }
+
+  void _completeManualIncomeAllocation({required double investments}) {
+    final income = state.pendingIncomeAmount ?? 0;
+    final spending = state.allocationSpending ?? 0;
+    final savings = state.allocationSavings ?? 0;
+    final txService = _ref.read(mockTransactionServiceProvider);
+    final currency = _ref.read(effectiveCurrencyProvider);
+
+    if (savings > 0) {
+      txService.addTransaction(TransactionModel(
+        id: 'tx_${DateTime.now().millisecondsSinceEpoch}_s',
+        amount: savings,
+        category: 'Allocated savings',
+        merchant: null,
+        createdAt: DateTime.now(),
+        type: kTransactionTypeSavings,
+        categoryGroup: kCategoryGroupSavings,
+      ));
+    }
+    if (investments > 0) {
+      txService.addTransaction(TransactionModel(
+        id: 'tx_${DateTime.now().millisecondsSinceEpoch}_i',
+        amount: investments,
+        category: 'Allocated investments',
+        merchant: null,
+        createdAt: DateTime.now(),
+        type: kTransactionTypeInvestment,
+        categoryGroup: kCategoryGroupSavings,
+      ));
+    }
+    _ref.read(transactionVersionProvider.notifier).state++;
     _addAssistantMessage(
-      'Please choose what you\'d like to do:',
+      'Allocation recorded: spending $spending, savings $savings, investments $investments $currency.',
+    );
+    state = state.copyWith(
+      flowStep: ChatFlowStep.postSaveConfirmation,
+      pendingIncomeAmount: null,
+      clearAllocationAmounts: true,
+    );
+    _addAssistantMessage('Would you like to add another income?');
+  }
+
+  Future<void> _handleHomeText(String text) async {
+    // In home state, never send to AI. Typing stays enabled; prompt to use buttons.
+    _addAssistantMessage(
+      'Please choose what you\'d like to do next.',
     );
   }
 
   Future<void> _handleTransactionModeText(String text) async {
+    // Post-save: allow typing "add another" / "exit"
+    if (state.flowStep == ChatFlowStep.postSaveConfirmation) {
+      _handlePostSaveText(text);
+      return;
+    }
+
     if (state.flowStep == ChatFlowStep.awaitingAmount) {
+      final isExpense = state.conversationState == ConversationState.expenseMode;
+      final hasNumber = _parseNumeric(text) != null;
+      final hasNonNumericText = _hasNonNumericText(text);
+
+      if (isExpense && hasNumber && hasNonNumericText) {
+        await _handleExpenseAmountAndText(text);
+        return;
+      }
+
       final amount = _parseNumeric(text);
       if (amount == null || amount <= 0) {
         _addAssistantMessage('Please enter a valid number (e.g. 1200).');
@@ -176,9 +306,195 @@ class ChatController extends StateNotifier<ChatControllerState> {
       await _completeTransactionFlow(description: text);
       return;
     }
+
+    if (state.conversationState == ConversationState.incomeMode &&
+        state.flowStep == ChatFlowStep.awaitingAllocationChoice) {
+      _addAssistantMessage('Please choose an option: Allocate manually, Use recommended, or Skip.');
+      return;
+    }
+
+    if (state.conversationState == ConversationState.incomeMode &&
+        state.flowStep == ChatFlowStep.awaitingManualSpending) {
+      final value = _parseNumeric(text);
+      if (value == null || value < 0) {
+        _addAssistantMessage('Please enter a valid amount.');
+        return;
+      }
+      state = state.copyWith(
+        allocationSpending: value,
+        flowStep: ChatFlowStep.awaitingManualSavings,
+      );
+      _addAssistantMessage('How much for savings?');
+      return;
+    }
+
+    if (state.conversationState == ConversationState.incomeMode &&
+        state.flowStep == ChatFlowStep.awaitingManualSavings) {
+      final value = _parseNumeric(text);
+      if (value == null || value < 0) {
+        _addAssistantMessage('Please enter a valid amount.');
+        return;
+      }
+      state = state.copyWith(
+        allocationSavings: value,
+        flowStep: ChatFlowStep.awaitingManualInvestments,
+      );
+      _addAssistantMessage('How much for investments?');
+      return;
+    }
+
+    if (state.conversationState == ConversationState.incomeMode &&
+        state.flowStep == ChatFlowStep.awaitingManualInvestments) {
+      final value = _parseNumeric(text);
+      if (value == null || value < 0) {
+        _addAssistantMessage('Please enter a valid amount.');
+        return;
+      }
+      final income = state.pendingIncomeAmount ?? 0;
+      final spending = state.allocationSpending ?? 0;
+      final savings = state.allocationSavings ?? 0;
+      final total = spending + savings + value;
+      if (total > income) {
+        _addAssistantMessage(
+          'Total ($total) exceeds income ($income). Please enter amounts that add up to no more than $income.',
+        );
+        return;
+      }
+      _completeManualIncomeAllocation(investments: value);
+      return;
+    }
+
+    if (state.flowStep == ChatFlowStep.awaitingCategorySelection) {
+      final group = _parseCategoryGroupFromText(text);
+      if (group != null) {
+        selectExpenseCategory(group);
+        return;
+      }
+      _addAssistantMessage('Please choose Needs, Wants, or Misc.');
+    }
+  }
+
+  String? _parseCategoryGroupFromText(String text) {
+    final lower = text.trim().toLowerCase();
+    if (lower.contains('need')) return kCategoryGroupNeeds;
+    if (lower.contains('want')) return kCategoryGroupWants;
+    if (lower == 'misc' || lower.contains('misc')) return kCategoryGroupWants;
+    return null;
+  }
+
+  void selectExpenseCategory(String categoryGroup) {
+    if (state.flowStep != ChatFlowStep.awaitingCategorySelection ||
+        state.pendingAmount == null) return;
+    final amount = state.pendingAmount!;
+    final description = state.pendingDescription ?? 'Misc';
+    final txService = _ref.read(mockTransactionServiceProvider);
+    final tx = TransactionModel(
+      id: 'tx_${DateTime.now().millisecondsSinceEpoch}',
+      amount: amount,
+      category: description.length > 30 ? 'Misc' : description,
+      merchant: null,
+      createdAt: DateTime.now(),
+      type: kTransactionTypeExpense,
+      categoryGroup: categoryGroup,
+    );
+    txService.addTransaction(tx);
+    _ref.read(transactionVersionProvider.notifier).state++;
+    _addAssistantMessage('Expense saved.');
+    _addAssistantMessage('Would you like to add another expense?');
+    state = state.copyWith(
+      flowStep: ChatFlowStep.postSaveConfirmation,
+      clearPendingAmount: true,
+      clearPendingDescription: true,
+    );
+  }
+
+  void _handlePostSaveText(String text) {
+    final lower = text.trim().toLowerCase();
+    final addAnother = lower.contains('add') && (lower.contains('another') || lower.contains('more'));
+    final exit = lower.contains('exit') || lower == 'no' || lower == 'n';
+    if (addAnother) {
+      handlePostSaveChoice(addAnother: true);
+      return;
+    }
+    if (exit) {
+      handlePostSaveChoice(addAnother: false);
+      return;
+    }
+    if (state.conversationState == ConversationState.allocationMode) {
+      _addAssistantMessage(
+        'Sorry, I didn\'t get that. Would you like to modify another category?',
+      );
+    } else {
+      final label = _postSaveLabel();
+      _addAssistantMessage(
+        'Sorry, I didn\'t get that. Would you like to add another $label?',
+      );
+    }
+  }
+
+  String _postSaveLabel() {
+    switch (state.conversationState) {
+      case ConversationState.expenseMode:
+        return 'expense';
+      case ConversationState.incomeMode:
+        return 'income';
+      case ConversationState.savingsMode:
+        return 'savings';
+      case ConversationState.allocationMode:
+        return 'modification';
+      case ConversationState.home:
+        return 'entry';
+    }
+  }
+
+  Future<void> _handleExpenseAmountAndText(String text) async {
+    final parser = _ref.read(mockParserServiceProvider);
+    final parsed = await parser.parse(text);
+    if (parsed != null && parsed.amount > 0) {
+      _saveExpenseFromParsed(parsed);
+      return;
+    }
+    final amount = _parseNumeric(text);
+    if (amount != null && amount > 0) {
+      state = state.copyWith(
+        pendingAmount: amount,
+        pendingDescription: text,
+        flowStep: ChatFlowStep.awaitingCategorySelection,
+        clearPendingDescription: false,
+      );
+      _addAssistantMessage('Which category does this belong to?');
+      return;
+    }
+    _addAssistantMessage('Please enter a valid number (e.g. 1200).');
+  }
+
+  void _saveExpenseFromParsed(ParsedTransaction parsed) {
+    final txService = _ref.read(mockTransactionServiceProvider);
+    final tx = TransactionModel(
+      id: 'tx_${DateTime.now().millisecondsSinceEpoch}',
+      amount: parsed.amount,
+      category: parsed.category,
+      merchant: parsed.merchant,
+      createdAt: DateTime.now(),
+      type: kTransactionTypeExpense,
+      categoryGroup: parsed.categoryGroup,
+    );
+    txService.addTransaction(tx);
+    _ref.read(transactionVersionProvider.notifier).state++;
+    _addAssistantMessage('Expense saved.');
+    _addAssistantMessage('Would you like to add another expense?');
+    state = state.copyWith(
+      flowStep: ChatFlowStep.postSaveConfirmation,
+      clearPendingAmount: true,
+      clearPendingDescription: true,
+    );
   }
 
   Future<void> _handleAllocationModeText(String text) async {
+    if (state.flowStep == ChatFlowStep.postSaveConfirmation) {
+      _handlePostSaveText(text);
+      return;
+    }
     if (state.flowStep == ChatFlowStep.awaitingAllocationPercent &&
         state.selectedAllocationGroup != null) {
       final percent = _parseNumeric(text);
@@ -287,6 +603,17 @@ class ChatController extends StateNotifier<ChatControllerState> {
       _ => 'Entry',
     };
 
+    if (type == kTransactionTypeIncome) {
+      _addAssistantMessage('Income saved.');
+      _addAssistantMessage('How would you like to allocate this income?');
+      state = state.copyWith(
+        flowStep: ChatFlowStep.awaitingAllocationChoice,
+        pendingIncomeAmount: amount,
+        clearPendingAmount: true,
+      );
+      return;
+    }
+
     _addAssistantMessage('$label saved.');
     _addAssistantMessage('Would you like to add another ${label.toLowerCase()}?');
 
@@ -319,7 +646,7 @@ class ChatController extends StateNotifier<ChatControllerState> {
       clearPendingAmount: true,
       clearSelectedAllocationGroup: true,
     );
-    _addAssistantMessage('You\'re back at the home menu.');
+    _addAssistantMessage('All set 👍 What would you like to do next?');
   }
 
   double? _parseNumeric(String text) {
@@ -327,6 +654,11 @@ class ChatController extends StateNotifier<ChatControllerState> {
     if (match == null) return null;
     final str = match.group(0)?.replaceAll(',', '.') ?? '';
     return double.tryParse(str);
+  }
+
+  bool _hasNonNumericText(String text) {
+    final withoutNumber = text.replaceAll(RegExp(r'[\d\s.,]+'), '').trim();
+    return withoutNumber.length > 0;
   }
 
   String _amountPromptForType(TransactionType type) {

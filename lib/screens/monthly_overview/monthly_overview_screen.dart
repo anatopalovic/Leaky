@@ -19,7 +19,11 @@ class MonthlyOverviewScreen extends ConsumerWidget {
     final rulesService = ref.watch(financialRulesServiceProvider);
     final currency = ref.watch(effectiveCurrencyProvider);
 
-    final total = txService.currentMonthTotal;
+    final incomeTotal = txService.currentMonthIncome;
+    final expensesTotal = txService.currentMonthExpenses;
+    final savingsTotal = txService.currentMonthSavings;
+    final investmentsTotal = txService.currentMonthInvestments;
+    final netTotal = txService.currentMonthNet;
     final byCategory = txService.currentMonthByCategory;
     final top3 = txService.topCategories(3);
     final yearly = txService.yearlyProjection;
@@ -55,8 +59,25 @@ class MonthlyOverviewScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         children: [
           _SummaryCard(
-            title: 'Total spent',
-            value: '${total.toStringAsFixed(0)} $currency',
+            title: 'Income',
+            value: '${incomeTotal.toStringAsFixed(0)} $currency',
+          ),
+          _SummaryCard(
+            title: 'Expenses',
+            value: '${expensesTotal.toStringAsFixed(0)} $currency',
+          ),
+          _SummaryCard(
+            title: 'Savings',
+            value: '${savingsTotal.toStringAsFixed(0)} $currency',
+          ),
+          _SummaryCard(
+            title: 'Investments',
+            value: '${investmentsTotal.toStringAsFixed(0)} $currency',
+          ),
+          _SummaryCard(
+            title: 'Net',
+            subtitle: 'Income − Expenses − Savings − Investments',
+            value: '${netTotal.toStringAsFixed(0)} $currency',
           ),
           if (evaluation != null) ...[
             const SizedBox(height: 24),
@@ -129,7 +150,7 @@ class MonthlyOverviewScreen extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
-                'No spending this month yet.',
+                'No expenses this month yet.',
                 style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
               ),
             )

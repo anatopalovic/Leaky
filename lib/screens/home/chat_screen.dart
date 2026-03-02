@@ -99,8 +99,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              itemCount: messages.length,
+              itemCount: messages.isEmpty && chatState.conversationState == ConversationState.home
+                  ? 1
+                  : messages.length,
               itemBuilder: (context, i) {
+                if (messages.isEmpty && chatState.conversationState == ConversationState.home) {
+                  return ChatBubble(
+                    text: 'Hi 👋 What would you like to do next?',
+                    isUser: false,
+                  );
+                }
                 final msg = messages[i];
                 return ChatBubble(
                   text: msg.text,
@@ -210,6 +218,44 @@ class _ConversationChips extends StatelessWidget {
     } else if (chatState.conversationState == ConversationState.savingsMode &&
         chatState.flowStep == ChatFlowStep.postSaveConfirmation) {
       chips.addAll(_buildPostSaveChips(context, 'savings'));
+    } else if (chatState.conversationState == ConversationState.expenseMode &&
+        chatState.flowStep == ChatFlowStep.awaitingCategorySelection) {
+      chips.addAll([
+        _buildChip(
+          context,
+          label: 'Needs',
+          onTap: () => ref.read(chatControllerProvider.notifier).selectExpenseCategory(kCategoryGroupNeeds),
+        ),
+        _buildChip(
+          context,
+          label: 'Wants',
+          onTap: () => ref.read(chatControllerProvider.notifier).selectExpenseCategory(kCategoryGroupWants),
+        ),
+        _buildChip(
+          context,
+          label: 'Misc',
+          onTap: () => ref.read(chatControllerProvider.notifier).selectExpenseCategory(kCategoryGroupWants),
+        ),
+      ]);
+    } else if (chatState.conversationState == ConversationState.incomeMode &&
+        chatState.flowStep == ChatFlowStep.awaitingAllocationChoice) {
+      chips.addAll([
+        _buildChip(
+          context,
+          label: 'Allocate manually',
+          onTap: () => ref.read(chatControllerProvider.notifier).handleIncomeAllocationChoice(choice: 'manual'),
+        ),
+        _buildChip(
+          context,
+          label: 'Use recommended (50/30/20)',
+          onTap: () => ref.read(chatControllerProvider.notifier).handleIncomeAllocationChoice(choice: 'recommended'),
+        ),
+        _buildChip(
+          context,
+          label: 'Skip',
+          onTap: () => ref.read(chatControllerProvider.notifier).handleIncomeAllocationChoice(choice: 'skip'),
+        ),
+      ]);
     } else if (chatState.conversationState == ConversationState.allocationMode &&
         chatState.flowStep == ChatFlowStep.awaitingAllocationCategory) {
       chips.addAll([

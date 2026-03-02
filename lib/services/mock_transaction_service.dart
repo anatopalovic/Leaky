@@ -18,15 +18,52 @@ class MockTransactionService {
     }).toList();
   }
 
-  /// Total spent this month.
+  /// Total spent this month (legacy; use currentMonthExpenses for expense-only totals).
   double get currentMonthTotal {
-    return currentMonthTransactions.fold(0.0, (sum, t) => sum + t.amount);
+    return currentMonthExpenses;
   }
 
-  /// Spending by category this month. Key = category, value = total.
+  /// Income total this month (transactions with type income).
+  double get currentMonthIncome {
+    return currentMonthTransactions
+        .where((t) => t.type == kTransactionTypeIncome)
+        .fold(0.0, (sum, t) => sum + t.amount);
+  }
+
+  /// Expenses total this month (transactions with type expense only).
+  double get currentMonthExpenses {
+    return currentMonthTransactions
+        .where((t) => t.type == kTransactionTypeExpense)
+        .fold(0.0, (sum, t) => sum + t.amount);
+  }
+
+  /// Savings total this month.
+  double get currentMonthSavings {
+    return currentMonthTransactions
+        .where((t) => t.type == kTransactionTypeSavings)
+        .fold(0.0, (sum, t) => sum + t.amount);
+  }
+
+  /// Investments total this month.
+  double get currentMonthInvestments {
+    return currentMonthTransactions
+        .where((t) => t.type == kTransactionTypeInvestment)
+        .fold(0.0, (sum, t) => sum + t.amount);
+  }
+
+  /// Net = Income - Expenses - Savings - Investments.
+  double get currentMonthNet {
+    return currentMonthIncome -
+        currentMonthExpenses -
+        currentMonthSavings -
+        currentMonthInvestments;
+  }
+
+  /// Spending by category this month (expenses only). Key = category, value = total.
   Map<String, double> get currentMonthByCategory {
     final map = <String, double>{};
     for (final t in currentMonthTransactions) {
+      if (t.type != kTransactionTypeExpense) continue;
       map[t.category] = (map[t.category] ?? 0) + t.amount;
     }
     return map;
@@ -50,8 +87,8 @@ class MockTransactionService {
     return entries.take(n).toList();
   }
 
-  /// Yearly projection: current month total × 12 (simple mock).
-  double get yearlyProjection => currentMonthTotal * 12;
+  /// Yearly projection: current month expenses × 12 (simple mock).
+  double get yearlyProjection => currentMonthExpenses * 12;
 
   /// Clear all. Used by Settings "Reset All Transactions". Replace with backend when needed.
   void clear() {
