@@ -10,6 +10,7 @@ import '../services/mock_auth_service.dart';
 import '../services/mock_salary_service.dart';
 import '../services/mock_subscription_service.dart';
 import '../services/mock_transaction_service.dart';
+import '../controllers/chat_controller.dart';
 
 /// Replace with real auth provider when using Supabase.
 final mockAuthServiceProvider = Provider<MockAuthService>((ref) => MockAuthService());
@@ -129,3 +130,10 @@ class ChatMessagesNotifier extends StateNotifier<List<ChatMessageModel>> {
     state = [];
   }
 }
+
+/// Guided chat controller & conversation state.
+final chatControllerProvider =
+    StateNotifierProvider<ChatController, ChatControllerState>((ref) {
+  return ChatController(ref);
+});
+
